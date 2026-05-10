@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Daily Personal OS</title>
+  <meta name="description" content="Daily Personal OS — MVP платформы ежедневного планирования жизни" />
+
+  <!-- Tailwind CDN: подходит для быстрого MVP и GitHub Pages -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel для JSX в одном HTML-файле. Для production лучше Vite-сборка, но для GitHub Pages MVP это работает. -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    html { scroll-behavior: smooth; }
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .glass { background: rgba(255,255,255,.82); backdrop-filter: blur(18px); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    const todayISO = () => new Date().toISOString().slice(0, 10);
+    const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+    const STORAGE_KEY = "daily-personal-os-index-html-v1";
+
+    const defaultState = {
+      dailyPlan: {
+        plan_date: todayISO(),
+        energy_level: "medium",
+        mood_score: 7,
+        main_focus: "Медицина + работа + тело + питание без хаоса",
+        top_priorities: [
+          { id: uid(), title: "60 минут учебы по медицине", done: false },
+          { id: uid(), title: "Закрыть 1 ключевую рабочую задачу", done: false },
+          { id: uid(), title: "30 минут движения / тренировки", done: false },
+        ],
+        day_summary: "",
+        ai_recommendation: "",
+      },
+      tasks: [
+        {
+          id: uid(),
+          title: "Собрать MVP Daily Personal OS",
+          description: "Главный экран, задачи, спорт, учеба, питание, чтение, AI-разбор",
+          category: "work",
+          priority: "high",
+          status: "in_progress",
+          deadline: todayISO(),
+          result_link: "",
+        },
+      ],
+      study_sessions: [
+        {
+          id: uid(),
+          session_date: todayISO(),
+          topic: "Внебольничная пневмония: клиника, диагностика, красные флаги",
+          source: "Клинические рекомендации / лекция / конспект",
+          duration_minutes: 60,
+          format: "reading",
+          key_takeaway: "",
+          weak_points: "",
+          completed: false,
+        },
+      ],
+      workouts: [
+        {
+          id: uid(),
+          workout_date: todayISO(),
+          workout_type: "Прогулка + легкая силовая",
+          duration_minutes: 30,
+          intensity: "light",
+          body_feeling: 7,
+          completed: false,
+          notes: "",
+        },
+      ],
+      meals: [
+        {
+          id: uid(),
+          meal_date: todayISO(),
+          meal_type: "Завтрак",
+          food_description: "Белковый прием пищи + овощи",
+          protein_estimate: 25,
+          calories_estimate: 400,
+          satiety_score: 7,
+          notes: "",
+        },
+      ],
+      reading_sessions: [
+        {
+          id: uid(),
+          session_date: todayISO(),
+          title: "Книга / статья дня",
+          pages_read: 10,
+          key_idea: "",
+          application_idea: "",
+        },
+      ],
+      weekly_reviews: [],
+      ai_insights: [],
+    };
+
+    const supabaseSQL = `
+create extension if not exists "uuid-ossp";
+
+create table if not exists daily_plans (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid,
+  plan_date date not null,
+  energy_level text default 'medium',
+  mood_score int default 7,
+  main_focus text,
+  top_priorities jsonb default '[]'::jsonb,
+  day_summary text,
+  ai_recommendation text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists tasks (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid,
+  title text not null,
+  description text,
+  category text default 'work',
+  priority text default 'medium',
+  status text default 'todo',
+  deadline date,
+  result_link text,
+  created_at timestamptz default now()
+);
+
+create table if not exists study_sessions (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid,
+  session_date date not null,
+  topic text not null,
+  source text,
+  duration_minutes int default 30,
+  format text default 'reading',
+  key_takeaway text,
+  weak_points text,
+  completed boolean default false,
+  created_at timestamptz default now()
+);
+
+create table if not exists workouts (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid,
+  workout_date date not null,
+  workout_type text not null,
+  duration_minutes int default 30,
+  intensity text default 'medium',
+  body_feeling int default 7,
+  completed boolean default false,
+  notes text,
+  created_at timestamptz default now()
+);
+
+create table if not exists meals (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid,
+  meal_date date not null,
+  meal_type text not null,
+  food_description text not null,
+  protein_estimate int default 0,
+  calories_estimate int default 0,
+  satiety_score int default 7,
+  notes text,
+  created_at timestamptz default now()
+);
+
+create table if not exists reading_sessions (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid,
+  session_date date not null,
+  title text not null,
+  pages_read int default 0,
+  key_idea text,
+  application_idea text,
+  created_at timestamptz default now()
+);
+
+create table if not exists weekly_reviews (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid,
+  week_start date not null,
+  week_end date not null,
+  wins text,
+  problems text,
+  metrics jsonb default '{}'::jsonb,
+  ai_plan_next_week text,
+  created_at timestamptz default now()
+);
+
+create table if not exists ai_insights (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid,
+  insight_date date not null,
+  insight_type text not null,
+  content text not null,
+  created_at timestamptz default now()
+);
+`;
+
+    const icons = {
+      home: "🏠",
+      week: "📅",
+      tasks: "🎯",
+      medicine: "🩺",
+      sport: "🏋️",
+      nutrition: "🥗",
+      reading: "📚",
+      ai: "🧠",
+      stats: "📊",
+      plus: "＋",
+      save: "💾",
+      spark: "✨",
+      moon: "🌙",
+      delete: "🗑",
+      check: "✅",
+      activity: "⚡",
+    };
+
+    const navItems = [
+      { key: "today", label: "Сегодня", icon: icons.home },
+      { key: "week", label: "Неделя", icon: icons.week },
+      { key: "tasks", label: "Рабочие задачи", icon: icons.tasks },
+      { key: "medicine", label: "Учеба / медицина", icon: icons.medicine },
+      { key: "sport", label: "Спорт", icon: icons.sport },
+      { key: "nutrition", label: "Питание", icon: icons.nutrition },
+      { key: "reading", label: "Чтение", icon: icons.reading },
+      { key: "ai", label: "Вечерний AI-разбор", icon: icons.ai },
+      { key: "stats", label: "Статистика", icon: icons.stats },
+    ];
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : defaultState;
+      } catch {
+        return defaultState;
+      }
+    }
+
+    function saveState(state) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function cls(...arr) {
+      return arr.filter(Boolean).join(" ");
+    }
+
+    function Badge({ children, tone = "slate" }) {
+      const tones = {
+        slate: "bg-slate-100 text-slate-700 border-slate-200",
+        blue: "bg-blue-50 text-blue-700 border-blue-100",
+        cyan: "bg-cyan-50 text-cyan-700 border-cyan-100",
+        green: "bg-emerald-50 text-emerald-700 border-emerald-100",
+        amber: "bg-amber-50 text-amber-700 border-amber-100",
+        rose: "bg-rose-50 text-rose-700 border-rose-100",
+      };
+
+      return (
+        <span className={cls("inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold", tones[tone])}>
+          {children}
+        </span>
+      );
+    }
+
+    function Button({ children, variant = "primary", className = "", ...props }) {
+      const variants = {
+        primary: "bg-slate-950 text-white hover:bg-slate-800",
+        cyan: "bg-cyan-400 text-slate-950 hover:bg-cyan-300",
+        soft: "bg-slate-100 text-slate-900 hover:bg-slate-200",
+        danger: "bg-rose-50 text-rose-700 hover:bg-rose-100",
+      };
+
+      return (
+        <button
+          {...props}
+          className={cls(
+            "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold transition active:scale-[.98]",
+            variants[variant],
+            className
+          )}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    function Card({ title, icon, children, action, className = "" }) {
+      return (
+        <section className={cls("rounded-[1.7rem] border border-slate-200 bg-white/90 p-5 shadow-sm shadow-slate-200/60", className)}>
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {icon && <div className="grid h-10 w-10 place-items-center rounded-2xl bg-slate-950 text-lg text-cyan-300">{icon}</div>}
+              <h2 className="text-base font-bold text-slate-950">{title}</h2>
+            </div>
+            {action}
+          </div>
+          {children}
+        </section>
+      );
+    }
+
+    function Field({ label, children }) {
+      return (
+        <label className="block">
+          <div className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">{label}</div>
+          {children}
+        </label>
+      );
+    }
+
+    function Input(props) {
+      return (
+        <input
+          {...props}
+          className={cls(
+            "w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100",
+            props.className
+          )}
+        />
+      );
+    }
+
+    function Select(props) {
+      return (
+        <select
+          {...props}
+          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+        />
+      );
+    }
+
+    function Textarea(props) {
+      return (
+        <textarea
+          {...props}
+          className="min-h-[110px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+        />
+      );
+    }
+
+    function Metric({ label, value, sub, icon }) {
+      return (
+        <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</div>
+            <div className="text-lg">{icon}</div>
+          </div>
+          <div className="mt-2 text-2xl font-black text-slate-950">{value}</div>
+          {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
+        </div>
+      );
+    }
+
+    function ProgressBar({ value }) {
+      const safe = Math.max(0, Math.min(100, Number(value) || 0));
+      return (
+        <div className="h-2 rounded-full bg-slate-100">
+          <div className="h-2 rounded-full bg-cyan-400 transition-all" style={{ width: `${safe}%` }} />
+        </div>
+      );
+    }
+
+    function Empty({ text }) {
+      return <div className="rounded-2xl border border-dashed border-slate-200 p-5 text-sm text-slate-500">{text}</div>;
+    }
+
+    function App() {
+      const [active, setActive] = useState("today");
+      const [state, setState] = useState(loadState);
+
+      useEffect(() => saveState(state), [state]);
+
+      const today = state.dailyPlan.plan_date || todayISO();
+
+      const todayTasks = state.tasks.filter((item) => !item.deadline || item.deadline === today);
+      const todayStudy = state.study_sessions.filter((item) => item.session_date === today);
+      const todayWorkouts = state.workouts.filter((item) => item.workout_date === today);
+      const todayMeals = state.meals.filter((item) => item.meal_date === today);
+      const todayReading = state.reading_sessions.filter((item) => item.session_date === today);
+
+      const stats = useMemo(() => {
+        const total =
+          state.dailyPlan.top_priorities.length +
+          todayTasks.length +
+          todayStudy.length +
+          todayWorkouts.length +
+          todayReading.length;
+
+        const done =
+          state.dailyPlan.top_priorities.filter((p) => p.done).length +
+          todayTasks.filter((t) => t.status === "done").length +
+          todayStudy.filter((s) => s.completed).length +
+          todayWorkouts.filter((w) => w.completed).length +
+          todayReading.filter((r) => Number(r.pages_read) > 0).length;
+
+        const progress = total ? Math.round((done / total) * 100) : 0;
+        const protein = todayMeals.reduce((sum, meal) => sum + Number(meal.protein_estimate || 0), 0);
+        const calories = todayMeals.reduce((sum, meal) => sum + Number(meal.calories_estimate || 0), 0);
+        const studyMinutes = todayStudy.reduce((sum, s) => sum + Number(s.duration_minutes || 0), 0);
+        const sportMinutes = todayWorkouts.reduce((sum, w) => sum + Number(w.duration_minutes || 0), 0);
+        const pages = todayReading.reduce((sum, r) => sum + Number(r.pages_read || 0), 0);
+
+        return { total, done, progress, protein, calories, studyMinutes, sportMinutes, pages };
+      }, [state, todayTasks, todayStudy, todayWorkouts, todayMeals, todayReading]);
+
+      function updateDailyPlan(patch) {
+        setState((prev) => ({ ...prev, dailyPlan: { ...prev.dailyPlan, ...patch } }));
+      }
+
+      function togglePriority(priorityId) {
+        setState((prev) => ({
+          ...prev,
+          dailyPlan: {
+            ...prev.dailyPlan,
+            top_priorities: prev.dailyPlan.top_priorities.map((p) =>
+              p.id === priorityId ? { ...p, done: !p.done } : p
+            ),
+          },
+        }));
+      }
+
+      function updatePriority(priorityId, title) {
+        setState((prev) => ({
+          ...prev,
+          dailyPlan: {
+            ...prev.dailyPlan,
+            top_priorities: prev.dailyPlan.top_priorities.map((p) =>
+              p.id === priorityId ? { ...p, title } : p
+            ),
+          },
+        }));
+      }
+
+      function addItem(collection, item) {
+        setState((prev) => ({ ...prev, [collection]: [{ id: uid(), ...item }, ...prev[collection]] }));
+      }
+
+      function updateItem(collection, itemId, patch) {
+        setState((prev) => ({
+          ...prev,
+          [collection]: prev[collection].map((item) => (item.id === itemId ? { ...item, ...patch } : item)),
+        }));
+      }
+
+      function deleteItem(collection, itemId) {
+        setState((prev) => ({ ...prev, [collection]: prev[collection].filter((item) => item.id !== itemId) }));
+      }
+
+      function generateMorningPlan() {
+        const energy = state.dailyPlan.energy_level;
+        const priorities =
+          energy === "low"
+            ? ["30–45 минут медицины", "1 рабочая задача без перегруза", "20 минут прогулки"]
+            : energy === "high"
+            ? ["90 минут медицины", "2 рабочие задачи", "45 минут тренировки"]
+            : ["60 минут медицины", "1–2 рабочие задачи", "30 минут движения"];
+
+        const mode = energy === "low" ? "восстановительный" : energy === "high" ? "интенсивный" : "сбалансированный";
+
+        updateDailyPlan({
+          main_focus: `${mode} день: медицина, работа, тело и питание без хаоса`,
+          top_priorities: priorities.map((title) => ({ id: uid(), title, done: false })),
+          ai_recommendation: `План адаптирован под уровень энергии: ${energy}. Главный принцип: не больше 3 ключевых задач. Сначала самый важный блок, затем питание и восстановление.`,
+        });
+      }
+
+      function generateEveningReview() {
+        const missing = [];
+        if (!todayStudy.some((s) => s.completed)) missing.push("учеба по медицине");
+        if (!todayWorkouts.some((w) => w.completed)) missing.push("спорт/движение");
+        if (!todayMeals.length) missing.push("питание");
+        if (!todayTasks.some((t) => t.status === "done")) missing.push("рабочая задача");
+
+        const content = `Итог дня: выполнено ${stats.done} из ${stats.total} ключевых пунктов (${stats.progress}%). ${
+          missing.length ? `Зоны внимания: ${missing.join(", ")}.` : "День закрыт сбалансированно."
+        } Завтра оставь 3 главных приоритета, начни с самого энергоемкого блока и заранее зафиксируй питание.`;
+
+        updateDailyPlan({ day_summary: content, ai_recommendation: content });
+        addItem("ai_insights", { insight_date: today, insight_type: "evening_review", content });
+      }
+
+      function generateWeeklyReview() {
+        const doneTasks = state.tasks.filter((t) => t.status === "done").length;
+        const completedStudy = state.study_sessions.filter((s) => s.completed).length;
+        const completedWorkouts = state.workouts.filter((w) => w.completed).length;
+        const pages = state.reading_sessions.reduce((sum, r) => sum + Number(r.pages_read || 0), 0);
+
+        const content = `Неделя: закрыто рабочих задач — ${doneTasks}, учебных сессий — ${completedStudy}, тренировок — ${completedWorkouts}, страниц чтения — ${pages}. Следующая неделя: 4 учебных блока по медицине, 3 тренировки, ежедневный короткий план питания и не больше 3 главных задач в день.`;
+
+        addItem("weekly_reviews", {
+          week_start: today,
+          week_end: today,
+          wins: "Система запущена. Есть базовый трекинг по всем направлениям.",
+          problems: "Главный риск — перегруз задачами и нерегулярное заполнение.",
+          metrics: { doneTasks, completedStudy, completedWorkouts, pages },
+          ai_plan_next_week: content,
+        });
+        addItem("ai_insights", { insight_date: today, insight_type: "weekly_review", content });
+        setActive("week");
+      }
+
+      function resetData() {
+        if (confirm("Очистить все данные и вернуть демо-версию?")) {
+          setState(defaultState);
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      }
+
+      function exportJSON() {
+        const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `daily-personal-os-${todayISO()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      return (
+        <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#cffafe_0,#f8fafc_34%,#e0e7ff_100%)] text-slate-900">
+          <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-4 p-4 lg:flex-row lg:p-6">
+
+            <aside className="rounded-[2rem] border border-white/70 bg-slate-950 p-4 text-white shadow-2xl shadow-slate-300/60 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:w-72">
+              <div className="mb-8 flex items-center gap-3 px-2">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-cyan-400 text-xl text-slate-950">{icons.activity}</div>
+                <div>
+                  <div className="text-lg font-black tracking-tight">Daily Personal OS</div>
+                  <div className="text-xs text-slate-400">medical productivity MVP</div>
+                </div>
+              </div>
+
+              <nav className="grid gap-1.5">
+                {navItems.map((item) => {
+                  const selected = active === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => setActive(item.key)}
+                      className={cls(
+                        "flex items-center justify-between rounded-2xl px-3 py-3 text-left text-sm transition",
+                        selected ? "bg-white text-slate-950" : "text-slate-300 hover:bg-white/10 hover:text-white"
+                      )}
+                    >
+                      <span className="flex items-center gap-3">
+                        <span>{item.icon}</span>
+                        {item.label}
+                      </span>
+                      {selected && <span>›</span>}
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+                <div className="mb-2 text-sm font-bold text-cyan-200">{icons.spark} MVP-логика</div>
+                <p className="text-xs leading-5 text-slate-400">
+                  Сейчас данные сохраняются в браузере. Для командной работы подключи Supabase.
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-2">
+                <Button variant="soft" className="w-full" onClick={exportJSON}>Экспорт JSON</Button>
+                <Button variant="danger" className="w-full" onClick={resetData}>Сбросить данные</Button>
+              </div>
+            </aside>
+
+            <main className="flex-1">
+              <header className="mb-5 rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur">
+                <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <Badge tone="cyan">single index.html</Badge>
+                      <Badge tone="blue">GitHub Pages</Badge>
+                      <Badge tone="green">localStorage</Badge>
+                    </div>
+                    <h1 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
+                      Персональный центр управления днем
+                    </h1>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                      Спорт, медицина, чтение, рабочие задачи, питание и AI-разбор в одной системе.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="cyan" onClick={generateMorningPlan}>{icons.spark} Утренний AI-план</Button>
+                    <Button variant="primary" onClick={generateEveningReview}>{icons.moon} Вечерний разбор</Button>
+                  </div>
+                </div>
+              </header>
+
+              {active === "today" && (
+                <TodayScreen
+                  state={state}
+                  stats={stats}
+                  todayWorkouts={todayWorkouts}
+                  todayStudy={todayStudy}
+                  todayReading={todayReading}
+                  todayMeals={todayMeals}
+                  updateDailyPlan={updateDailyPlan}
+                  togglePriority={togglePriority}
+                  updatePriority={updatePriority}
+                />
+              )}
+
+              {active === "tasks" && (
+                <TasksScreen
+                  items={state.tasks}
+                  addItem={addItem}
+                  updateItem={updateItem}
+                  deleteItem={deleteItem}
+                />
+              )}
+
+              {active === "medicine" && (
+                <StudyScreen
+                  items={state.study_sessions}
+                  addItem={addItem}
+                  updateItem={updateItem}
+                  deleteItem={deleteItem}
+                  today={today}
+                />
+              )}
+
+              {active === "sport" && (
+                <SportScreen
+                  items={state.workouts}
+                  addItem={addItem}
+                  updateItem={updateItem}
+                  deleteItem={deleteItem}
+                  today={today}
+                />
+              )}
+
+              {active === "nutrition" && (
+                <NutritionScreen
+                  items={state.meals}
+                  addItem={addItem}
+                  updateItem={updateItem}
+                  deleteItem={deleteItem}
+                  today={today}
+                />
+              )}
+
+              {active === "reading" && (
+                <ReadingScreen
+                  items={state.reading_sessions}
+                  addItem={addItem}
+                  updateItem={updateItem}
+                  deleteItem={deleteItem}
+                  today={today}
+                />
+              )}
+
+              {active === "ai" && (
+                <AIScreen
+                  state={state}
+                  updateDailyPlan={updateDailyPlan}
+                  generateEveningReview={generateEveningReview}
+                  generateWeeklyReview={generateWeeklyReview}
+                />
+              )}
+
+              {active === "week" && (
+                <WeekScreen reviews={state.weekly_reviews} generateWeeklyReview={generateWeeklyReview} />
+              )}
+
+              {active === "stats" && <StatsScreen state={state} stats={stats} />}
+            </main>
+          </div>
+        </div>
+      );
+    }
+
+    function TodayScreen({
+      state,
+      stats,
+      todayWorkouts,
+      todayStudy,
+      todayReading,
+      todayMeals,
+      updateDailyPlan,
+      togglePriority,
+      updatePriority,
+    }) {
+      return (
+        <div className="grid gap-5">
+          <div className="grid gap-4 md:grid-cols-4">
+            <Metric label="Прогресс дня" value={`${stats.progress}%`} sub={`${stats.done}/${stats.total} пунктов`} icon="✅" />
+            <Metric label="Медицина" value={`${stats.studyMinutes} мин`} sub="учебная нагрузка" icon="🩺" />
+            <Metric label="Спорт" value={`${stats.sportMinutes} мин`} sub="движение сегодня" icon="🏋️" />
+            <Metric label="Питание" value={`${stats.protein} г`} sub={`${stats.calories} ккал, белок оценочно`} icon="🥗" />
+          </div>
+
+          <Card title="Фокус дня" icon="⚡">
+            <div className="grid gap-4 lg:grid-cols-4">
+              <Field label="Дата">
+                <Input type="date" value={state.dailyPlan.plan_date} onChange={(e) => updateDailyPlan({ plan_date: e.target.value })} />
+              </Field>
+
+              <Field label="Энергия">
+                <Select value={state.dailyPlan.energy_level} onChange={(e) => updateDailyPlan({ energy_level: e.target.value })}>
+                  <option value="low">Низкая</option>
+                  <option value="medium">Средняя</option>
+                  <option value="high">Высокая</option>
+                </Select>
+              </Field>
+
+              <Field label="Настроение">
+                <Input type="number" min="1" max="10" value={state.dailyPlan.mood_score} onChange={(e) => updateDailyPlan({ mood_score: Number(e.target.value) })} />
+              </Field>
+
+              <Field label="Главный фокус">
+                <Input value={state.dailyPlan.main_focus} onChange={(e) => updateDailyPlan({ main_focus: e.target.value })} />
+              </Field>
+            </div>
+
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="font-bold text-slate-800">Выполнение дня</span>
+                <span className="text-slate-500">{stats.progress}%</span>
+              </div>
+              <ProgressBar value={stats.progress} />
+            </div>
+          </Card>
+
+          <div className="grid gap-5 xl:grid-cols-3">
+            <Card title="3 главные задачи" icon="🎯" className="xl:col-span-1">
+              <div className="grid gap-3">
+                {state.dailyPlan.top_priorities.map((priority) => (
+                  <div key={priority.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <button
+                      onClick={() => togglePriority(priority.id)}
+                      className={cls("h-6 w-6 shrink-0 rounded-full border", priority.done ? "border-cyan-500 bg-cyan-400" : "border-slate-300 bg-white")}
+                    />
+                    <Input
+                      value={priority.title}
+                      onChange={(e) => updatePriority(priority.id, e.target.value)}
+                      className={priority.done ? "line-through opacity-60" : ""}
+                    />
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card title="AI-рекомендация" icon="✨" className="xl:col-span-2">
+              <div className="rounded-3xl bg-slate-950 p-5 text-cyan-50">
+                <p className="text-sm leading-7">
+                  {state.dailyPlan.ai_recommendation ||
+                    "Нажми «Утренний AI-план», чтобы получить адаптивный план под текущую энергию. Вечером нажми «Вечерний разбор», чтобы система сформировала вывод дня."}
+                </p>
+              </div>
+            </Card>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <MiniBlock title="Спорт" icon="🏋️" items={todayWorkouts.map((w) => `${w.workout_type} · ${w.duration_minutes} мин · ${w.intensity}`)} />
+            <MiniBlock title="Учеба / медицина" icon="🩺" items={todayStudy.map((s) => `${s.topic} · ${s.duration_minutes} мин`)} />
+            <MiniBlock title="Чтение" icon="📚" items={todayReading.map((r) => `${r.title} · ${r.pages_read} стр.`)} />
+            <MiniBlock title="Питание" icon="🥗" items={todayMeals.map((m) => `${m.meal_type}: ${m.food_description} · ${m.protein_estimate} г белка`)} />
+          </div>
+        </div>
+      );
+    }
+
+    function MiniBlock({ title, icon, items }) {
+      return (
+        <Card title={title} icon={icon}>
+          {items.length ? (
+            <div className="grid gap-2">
+              {items.map((item, index) => (
+                <div key={index} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  {item}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Empty text="Пока нет записей на сегодня." />
+          )}
+        </Card>
+      );
+    }
+
+    function TasksScreen({ items, addItem, updateItem, deleteItem }) {
+      const [title, setTitle] = useState("");
+      const [priority, setPriority] = useState("medium");
+      const [deadline, setDeadline] = useState(todayISO());
+
+      return (
+        <div className="grid gap-5">
+          <Card title="Добавить рабочую задачу" icon="＋">
+            <div className="grid gap-3 md:grid-cols-[1fr_150px_160px_auto] md:items-end">
+              <Field label="Задача">
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Например: подготовить план недели" />
+              </Field>
+              <Field label="Приоритет">
+                <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
+                  <option value="low">низкий</option>
+                  <option value="medium">средний</option>
+                  <option value="high">высокий</option>
+                </Select>
+              </Field>
+              <Field label="Дедлайн">
+                <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+              </Field>
+              <Button
+                onClick={() => {
+                  if (!title.trim()) return;
+                  addItem("tasks", {
+                    title,
+                    priority,
+                    deadline,
+                    category: "work",
+                    status: "todo",
+                    description: "",
+                    result_link: "",
+                  });
+                  setTitle("");
+                }}
+              >
+                ＋ Добавить
+              </Button>
+            </div>
+          </Card>
+
+          <Card title="Рабочие задачи" icon="🎯">
+            {items.length ? (
+              <div className="grid gap-3">
+                {items.map((task) => (
+                  <div key={task.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 md:grid-cols-[1fr_150px_130px_44px] md:items-center">
+                    <div>
+                      <Input value={task.title} onChange={(e) => updateItem("tasks", task.id, { title: e.target.value })} />
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge tone={task.priority === "high" ? "rose" : task.priority === "medium" ? "amber" : "slate"}>{task.priority}</Badge>
+                        <Badge tone="blue">{task.category}</Badge>
+                        {task.deadline && <Badge tone="cyan">до {task.deadline}</Badge>}
+                      </div>
+                    </div>
+
+                    <Select value={task.status} onChange={(e) => updateItem("tasks", task.id, { status: e.target.value })}>
+                      <option value="todo">не начато</option>
+                      <option value="in_progress">в процессе</option>
+                      <option value="done">готово</option>
+                    </Select>
+
+                    <Select value={task.priority} onChange={(e) => updateItem("tasks", task.id, { priority: e.target.value })}>
+                      <option value="low">низкий</option>
+                      <option value="medium">средний</option>
+                      <option value="high">высокий</option>
+                    </Select>
+
+                    <Button variant="danger" onClick={() => deleteItem("tasks", task.id)} className="px-3">🗑</Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="Задач пока нет." />
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    function StudyScreen({ items, addItem, updateItem, deleteItem, today }) {
+      const [topic, setTopic] = useState("");
+      const [minutes, setMinutes] = useState(60);
+
+      return (
+        <div className="grid gap-5">
+          <Card title="Добавить учебный блок" icon="🩺">
+            <div className="grid gap-3 md:grid-cols-[1fr_160px_auto] md:items-end">
+              <Field label="Тема">
+                <Input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Например: ХОБЛ, пневмония, ЭКГ" />
+              </Field>
+              <Field label="Минуты">
+                <Input type="number" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
+              </Field>
+              <Button
+                onClick={() => {
+                  if (!topic.trim()) return;
+                  addItem("study_sessions", {
+                    session_date: today,
+                    topic,
+                    source: "",
+                    duration_minutes: minutes,
+                    format: "reading",
+                    key_takeaway: "",
+                    weak_points: "",
+                    completed: false,
+                  });
+                  setTopic("");
+                }}
+              >
+                ＋ Добавить
+              </Button>
+            </div>
+          </Card>
+
+          <Card title="Учеба / медицина" icon="🩺">
+            {items.length ? (
+              <div className="grid gap-3">
+                {items.map((item) => (
+                  <div key={item.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 md:grid-cols-[1fr_130px_120px_44px] md:items-center">
+                    <div>
+                      <Input value={item.topic} onChange={(e) => updateItem("study_sessions", item.id, { topic: e.target.value })} />
+                      <div className="mt-2 text-xs text-slate-500">{item.source || "Источник не указан"}</div>
+                    </div>
+                    <Input type="number" value={item.duration_minutes} onChange={(e) => updateItem("study_sessions", item.id, { duration_minutes: Number(e.target.value) })} />
+                    <Select value={item.completed ? "done" : "todo"} onChange={(e) => updateItem("study_sessions", item.id, { completed: e.target.value === "done" })}>
+                      <option value="todo">в плане</option>
+                      <option value="done">готово</option>
+                    </Select>
+                    <Button variant="danger" onClick={() => deleteItem("study_sessions", item.id)} className="px-3">🗑</Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="Добавь учебную сессию по медицине." />
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    function SportScreen({ items, addItem, updateItem, deleteItem, today }) {
+      const [type, setType] = useState("");
+      const [minutes, setMinutes] = useState(30);
+
+      return (
+        <div className="grid gap-5">
+          <Card title="Добавить спорт" icon="🏋️">
+            <div className="grid gap-3 md:grid-cols-[1fr_160px_auto] md:items-end">
+              <Field label="Тренировка">
+                <Input value={type} onChange={(e) => setType(e.target.value)} placeholder="Прогулка / силовая / растяжка" />
+              </Field>
+              <Field label="Минуты">
+                <Input type="number" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
+              </Field>
+              <Button
+                onClick={() => {
+                  if (!type.trim()) return;
+                  addItem("workouts", {
+                    workout_date: today,
+                    workout_type: type,
+                    duration_minutes: minutes,
+                    intensity: "medium",
+                    body_feeling: 7,
+                    completed: false,
+                    notes: "",
+                  });
+                  setType("");
+                }}
+              >
+                ＋ Добавить
+              </Button>
+            </div>
+          </Card>
+
+          <Card title="Спорт" icon="🏋️">
+            {items.length ? (
+              <div className="grid gap-3">
+                {items.map((item) => (
+                  <div key={item.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 md:grid-cols-[1fr_130px_130px_120px_44px] md:items-center">
+                    <Input value={item.workout_type} onChange={(e) => updateItem("workouts", item.id, { workout_type: e.target.value })} />
+                    <Input type="number" value={item.duration_minutes} onChange={(e) => updateItem("workouts", item.id, { duration_minutes: Number(e.target.value) })} />
+                    <Select value={item.intensity} onChange={(e) => updateItem("workouts", item.id, { intensity: e.target.value })}>
+                      <option value="light">легкая</option>
+                      <option value="medium">средняя</option>
+                      <option value="hard">тяжелая</option>
+                    </Select>
+                    <Select value={item.completed ? "done" : "todo"} onChange={(e) => updateItem("workouts", item.id, { completed: e.target.value === "done" })}>
+                      <option value="todo">в плане</option>
+                      <option value="done">готово</option>
+                    </Select>
+                    <Button variant="danger" onClick={() => deleteItem("workouts", item.id)} className="px-3">🗑</Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="Добавь тренировку или прогулку." />
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    function NutritionScreen({ items, addItem, updateItem, deleteItem, today }) {
+      const [mealType, setMealType] = useState("Обед");
+      const [food, setFood] = useState("");
+      const [protein, setProtein] = useState(25);
+      const [calories, setCalories] = useState(400);
+
+      return (
+        <div className="grid gap-5">
+          <Card title="Добавить прием пищи" icon="🥗">
+            <div className="grid gap-3 md:grid-cols-[140px_1fr_120px_120px_auto] md:items-end">
+              <Field label="Прием">
+                <Input value={mealType} onChange={(e) => setMealType(e.target.value)} />
+              </Field>
+              <Field label="Еда">
+                <Input value={food} onChange={(e) => setFood(e.target.value)} placeholder="Индейка, гречка, овощи" />
+              </Field>
+              <Field label="Белок, г">
+                <Input type="number" value={protein} onChange={(e) => setProtein(Number(e.target.value))} />
+              </Field>
+              <Field label="Ккал">
+                <Input type="number" value={calories} onChange={(e) => setCalories(Number(e.target.value))} />
+              </Field>
+              <Button
+                onClick={() => {
+                  if (!food.trim()) return;
+                  addItem("meals", {
+                    meal_date: today,
+                    meal_type: mealType,
+                    food_description: food,
+                    protein_estimate: protein,
+                    calories_estimate: calories,
+                    satiety_score: 7,
+                    notes: "",
+                  });
+                  setFood("");
+                }}
+              >
+                ＋ Добавить
+              </Button>
+            </div>
+          </Card>
+
+          <Card title="Питание" icon="🥗">
+            {items.length ? (
+              <div className="grid gap-3">
+                {items.map((item) => (
+                  <div key={item.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 md:grid-cols-[150px_1fr_120px_120px_44px] md:items-center">
+                    <Input value={item.meal_type} onChange={(e) => updateItem("meals", item.id, { meal_type: e.target.value })} />
+                    <Input value={item.food_description} onChange={(e) => updateItem("meals", item.id, { food_description: e.target.value })} />
+                    <Input type="number" value={item.protein_estimate} onChange={(e) => updateItem("meals", item.id, { protein_estimate: Number(e.target.value) })} />
+                    <Input type="number" value={item.calories_estimate} onChange={(e) => updateItem("meals", item.id, { calories_estimate: Number(e.target.value) })} />
+                    <Button variant="danger" onClick={() => deleteItem("meals", item.id)} className="px-3">🗑</Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="Добавь прием пищи." />
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    function ReadingScreen({ items, addItem, updateItem, deleteItem, today }) {
+      const [title, setTitle] = useState("");
+      const [pages, setPages] = useState(10);
+
+      return (
+        <div className="grid gap-5">
+          <Card title="Добавить чтение" icon="📚">
+            <div className="grid gap-3 md:grid-cols-[1fr_140px_auto] md:items-end">
+              <Field label="Материал">
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Книга / статья / глава" />
+              </Field>
+              <Field label="Страницы">
+                <Input type="number" value={pages} onChange={(e) => setPages(Number(e.target.value))} />
+              </Field>
+              <Button
+                onClick={() => {
+                  if (!title.trim()) return;
+                  addItem("reading_sessions", {
+                    session_date: today,
+                    title,
+                    pages_read: pages,
+                    key_idea: "",
+                    application_idea: "",
+                  });
+                  setTitle("");
+                }}
+              >
+                ＋ Добавить
+              </Button>
+            </div>
+          </Card>
+
+          <Card title="Чтение" icon="📚">
+            {items.length ? (
+              <div className="grid gap-3">
+                {items.map((item) => (
+                  <div key={item.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 md:grid-cols-[1fr_120px_44px] md:items-center">
+                    <Input value={item.title} onChange={(e) => updateItem("reading_sessions", item.id, { title: e.target.value })} />
+                    <Input type="number" value={item.pages_read} onChange={(e) => updateItem("reading_sessions", item.id, { pages_read: Number(e.target.value) })} />
+                    <Button variant="danger" onClick={() => deleteItem("reading_sessions", item.id)} className="px-3">🗑</Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="Добавь книгу, статью или клинический разбор." />
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    function AIScreen({ state, updateDailyPlan, generateEveningReview, generateWeeklyReview }) {
+      return (
+        <div className="grid gap-5">
+          <Card title="Вечерний AI-разбор" icon="🧠">
+            <div className="grid gap-4">
+              <Field label="Короткий итог дня">
+                <Textarea
+                  value={state.dailyPlan.day_summary}
+                  onChange={(e) => updateDailyPlan({ day_summary: e.target.value })}
+                  placeholder="Что получилось? Что не получилось? Почему?"
+                />
+              </Field>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="primary" onClick={generateEveningReview}>✨ Сгенерировать разбор</Button>
+                <Button variant="cyan" onClick={generateWeeklyReview}>📅 Сгенерировать недельный отчет</Button>
+              </div>
+            </div>
+          </Card>
+
+          <Card title="История AI-инсайтов" icon="✨">
+            {state.ai_insights.length ? (
+              <div className="grid gap-3">
+                {state.ai_insights.map((insight) => (
+                  <div key={insight.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      <Badge tone="cyan">{insight.insight_type}</Badge>
+                      <Badge>{insight.insight_date}</Badge>
+                    </div>
+                    <p className="text-sm leading-6 text-slate-700">{insight.content}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="AI-инсайтов пока нет." />
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    function WeekScreen({ reviews, generateWeeklyReview }) {
+      return (
+        <div className="grid gap-5">
+          <Card title="Неделя" icon="📅" action={<Button variant="cyan" onClick={generateWeeklyReview}>✨ Новый отчет</Button>}>
+            {reviews.length ? (
+              <div className="grid gap-3">
+                {reviews.map((review) => (
+                  <div key={review.id} className="rounded-3xl border border-slate-200 bg-white p-4">
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      <Badge tone="blue">{review.week_start}</Badge>
+                      <Badge tone="cyan">{review.week_end}</Badge>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div>
+                        <div className="text-xs font-black uppercase text-slate-400">Победы</div>
+                        <p className="mt-1 text-sm text-slate-700">{review.wins}</p>
+                      </div>
+                      <div>
+                        <div className="text-xs font-black uppercase text-slate-400">Проблемы</div>
+                        <p className="mt-1 text-sm text-slate-700">{review.problems}</p>
+                      </div>
+                      <div>
+                        <div className="text-xs font-black uppercase text-slate-400">План</div>
+                        <p className="mt-1 text-sm text-slate-700">{review.ai_plan_next_week}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="Недельных отчетов пока нет. Сгенерируй первый отчет." />
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    function StatsScreen({ state, stats }) {
+      const taskDone = state.tasks.filter((t) => t.status === "done").length;
+      const studyDone = state.study_sessions.filter((s) => s.completed).length;
+      const workoutsDone = state.workouts.filter((w) => w.completed).length;
+      const pages = state.reading_sessions.reduce((sum, r) => sum + Number(r.pages_read || 0), 0);
+
+      return (
+        <div className="grid gap-5">
+          <div className="grid gap-4 md:grid-cols-4">
+            <Metric label="День" value={`${stats.progress}%`} sub="текущий прогресс" icon="⚡" />
+            <Metric label="Работа" value={taskDone} sub="задач закрыто" icon="🎯" />
+            <Metric label="Учеба" value={studyDone} sub="сессий закрыто" icon="🩺" />
+            <Metric label="Чтение" value={pages} sub="страниц всего" icon="📚" />
+          </div>
+
+          <Card title="Сводка системы" icon="📊">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-3xl bg-slate-50 p-5">
+                <div className="mb-2 text-sm font-bold text-slate-900">Баланс направлений</div>
+                <div className="grid gap-3 text-sm text-slate-700">
+                  <div>Рабочие задачи: {state.tasks.length}</div>
+                  <ProgressBar value={state.tasks.length ? (taskDone / state.tasks.length) * 100 : 0} />
+                  <div>Учебные сессии: {state.study_sessions.length}</div>
+                  <ProgressBar value={state.study_sessions.length ? (studyDone / state.study_sessions.length) * 100 : 0} />
+                  <div>Тренировки: {state.workouts.length}</div>
+                  <ProgressBar value={state.workouts.length ? (workoutsDone / state.workouts.length) * 100 : 0} />
+                </div>
+              </div>
+
+              <div className="rounded-3xl bg-slate-950 p-5 text-cyan-50">
+                <div className="mb-2 text-sm font-bold">✨ Следующее улучшение</div>
+                <p className="text-sm leading-7 text-cyan-50/90">
+                  Для командной или многопользовательской версии нужно подключить Supabase Auth, PostgreSQL-таблицы, RLS и AI-обработку через backend/edge function.
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card title="Supabase SQL schema" icon="💾">
+            <pre className="no-scrollbar max-h-[420px] overflow-auto rounded-3xl bg-slate-950 p-5 text-xs leading-5 text-cyan-50">{supabaseSQL}</pre>
+          </Card>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
